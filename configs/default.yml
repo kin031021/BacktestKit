@@ -1,0 +1,51 @@
+### === Module: configs/default.yml ===
+# Backtrader 量化交易回測系統預設設定檔
+
+# 回測時間範圍
+start_date: '2020-06-21'
+end_date: '2025-06-20'
+
+# 股票清單檔案
+symbol_files:
+  - 'data/stock_lists/0050_list.csv'
+  - 'data/stock_lists/mid100_list.csv'
+
+# 策略設定
+strategy:
+  name: 'Breakout20'
+  params:
+    sma_window: 20      # SMA移動平均週期
+    high_window: 20     # 突破判斷的最高價週期
+
+# 資金設定
+cash: 10_000_000        # 初始資金 (1000萬台幣)
+
+# 交易成本設定
+commission: 0.001425    # 手續費率 (0.1425%)
+slippage: 0.001         # 滑價 (0.1%)
+
+# 部位大小設定
+sizer:
+  type: 'PercentSizer'  # 百分比部位
+  percents: 2           # 每筆交易使用2%資金
+
+# 資料設定
+data:
+  cache_enabled: true                    # 啟用快取
+  cache_dir: 'data/cache'               # 快取目錄
+  download_timeout: 30                   # 下載超時時間(秒)
+  retry_attempts: 3                      # 重試次數
+  ssl_verify: false                      # SSL 憑證驗證 (若下載失敗可設為 false)
+
+# 日誌設定
+logging:
+  level: 'INFO'                         # 日誌等級
+  file_path: 'results/logs/backtest.log' # 日誌檔案路徑
+  rotation: '10 MB'                     # 日誌輪轉大小
+  retention: '30 days'                  # 日誌保留天數
+
+# 輸出設定
+output:
+  csv_path: 'results/csv/backtest_results.csv'  # CSV結果檔案路徑
+  show_summary: true                             # 顯示績效摘要
+  show_trades: false                             # 顯示交易明細
