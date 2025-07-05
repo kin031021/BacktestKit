@@ -1,6 +1,12 @@
+### === Module: verify_yfinance.py ===
+"""獨立驗證 yfinance 是否能順利下載資料"""
+
 import yfinance as yf
 import warnings
-import requests
+
+# yfinance 目前已自動處理所需的網路 Session
+# 若自行傳入 requests.Session 會在新版 yfinance 中造成錯誤
+
 
 # 抑制 yfinance 可能產生的警告
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -15,16 +21,13 @@ def verify_download(symbol='2330.TW', start='2025-01-01', end='2025-01-31'):
 
     try:
         # 核心測試程式碼
-        print("\n1. 建立 requests.Session 並停用 SSL 驗證...")
-        session = requests.Session()
-        session.verify = False
-        print("   Session 建立成功。")
-
-        print("\n2. 建立 Ticker 物件...")
-        ticker = yf.Ticker(symbol, session=session)
+        # 在舊版範例中會自行建立 requests.Session 並傳入 Ticker
+        # 但自 yfinance 0.2.32 起禁止傳入非 curl_cffi session
+        print("\n1. 建立 Ticker 物件...")
+        ticker = yf.Ticker(symbol)
         print(f"   Ticker 物件建立成功: {ticker}")
 
-        print("\n3. 呼叫 history() 方法下載資料...")
+        print("\n2. 呼叫 history() 方法下載資料...")
         data = ticker.history(start=start, end=end, timeout=30)
         print("   history() 方法執行完畢。")
 
