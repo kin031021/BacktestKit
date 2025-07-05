@@ -27,6 +27,11 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 memory = Memory(str(CACHE_DIR), verbose=0)
 
 
+class DownloadError(Exception):
+    """自訂下載錯誤例外"""
+    pass
+
+
 @memory.cache
 def _download_stock_data_impl(
     symbol: str,
@@ -34,7 +39,7 @@ def _download_stock_data_impl(
     end_date: str,
     timeout: int = 30,
     retry_attempts: int = 3
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame:
     """
     實際下載股票資料的實作函數（已移至模組層級以支援快取）
 
@@ -46,7 +51,10 @@ def _download_stock_data_impl(
         retry_attempts (int): 重試次數
 
     Returns:
-        Optional[pd.DataFrame]: 股票資料DataFrame，失敗則返回None
+        pd.DataFrame: 股票資料DataFrame
+
+    Raises:
+        DownloadError: 當下載失敗或資料無效時引發
     """
     # 為台股代碼加上 .TW 後綴
     tw_symbol = f"{symbol}.TW" if not symbol.endswith('.TW') else symbol
@@ -64,8 +72,7 @@ def _download_stock_data_impl(
             )
             
             if data.empty:
-                logger.warning(f"股票 {tw_symbol} 無資料")
-                return None
+                raise DownloadError(f"股票 {tw_symbol} 無資料")
             
             # 重新命名欄位為英文
             data.columns = [col.lower() for col in data.columns]
@@ -75,13 +82,11 @@ def _download_stock_data_impl(
             missing_columns = [col for col in required_columns if col not in data.columns]
             
             if missing_columns:
-                logger.error(f"股票 {tw_symbol} 缺少必要欄位: {missing_columns}")
-                return None
+                raise DownloadError(f"股票 {tw_symbol} 缺少必要欄位: {missing_columns}")
             
             # 移除缺失值過多的資料
             if data.isnull().sum().sum() > len(data) * 0.1:  # 缺失值超過10%
-                logger.warning(f"股票 {tw_symbol} 缺失值過多，跳過")
-                return None
+                raise DownloadError(f"股票 {tw_symbol} 缺失值過多")
             
             # 前向填補缺失值
             data = data.fillna(method='ffill')
@@ -97,10 +102,9 @@ def _download_stock_data_impl(
                 import time
                 time.sleep(1)
             else:
-                logger.error(f"下載 {tw_symbol} 最終失敗")
-                return None
+                raise DownloadError(f"下載 {tw_symbol} 最終失敗: {str(e)}")
     
-    return None
+    raise DownloadError(f"下載 {tw_symbol} 未知錯誤")
 
 
 class DataManager:
@@ -201,11 +205,12 @@ class DataManager:
             symbols_iter = symbols
         
         for symbol in symbols_iter:
-            data = self.download_stock_data(symbol, start_date, end_date, **kwargs)
-            if data is not None and not data.empty:
-                stock_data[symbol] = data
-            else:
-                logger.warning(f"跳過股票 {symbol}：無有效資料")
+            try:
+                data = self.download_stock_data(symbol, start_date, end_date, **kwargs)
+                if data is not None and not data.empty:
+                    stock_data[symbol] = data
+            except DownloadError as e:
+                logger.warning(f"跳過股票 {symbol}：{str(e)}")
         
         logger.info(f"成功下載 {len(stock_data)}/{len(symbols)} 檔股票資料")
         return stock_data
