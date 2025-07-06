@@ -152,6 +152,24 @@ class Breakout20Strategy(bt.Strategy):
         """
         data_name = data._name
         
+        # --- DEBUG LOGGING START ---
+        try:
+            log_msg = (
+                f"Processing Data - Stock: {data_name}, "
+                f"Date: {self.datetime.date(0)}, "
+                f"Data Len: {len(data)}, "
+                f"SMA: {self.sma[data][0] if len(self.sma[data]) > 0 else 'N/A'}, "
+                f"Highest: {self.highest[data][0] if len(self.highest[data]) > 0 else 'N/A'}"
+            )
+            logger.debug(log_msg)
+        except IndexError:
+            logger.warning(
+                f"IndexError during logging - Stock: {data_name}, "
+                f"Date: {self.datetime.date(0)}, "
+                f"Data Len: {len(data)}"
+            )
+        # --- DEBUG LOGGING END ---
+        
         # 檢查是否有足夠的歷史資料
         if len(data) < max(self.params.sma_window, self.params.high_window):
             return
@@ -200,19 +218,15 @@ class Breakout20Strategy(bt.Strategy):
         if (self.tracking[data] and 
             current_close > highest_value):
             
-            # 計算部位大小
-            size = self.calculate_position_size(data)
+            # Backtrader 會自動使用 sizer 計算部位大小，我們只需下單即可
+            # 執行買入
+            order = self.buy(data=data)
+            self.order_pending[data] = order
             
-            if size > 0:
-                # 執行買入
-                order = self.buy(data=data, size=size)
-                self.order_pending[data] = order
-                
-                self.log(
-                    f'買入信號 - 收盤價 {current_close:.2f} > 20日高點 {highest_value:.2f}, '
-                    f'部位: {size}',
-                    data_name=data_name
-                )
+            self.log(
+                f'買入信號 - 收盤價 {current_close:.2f} > 20日高點 {highest_value:.2f}',
+                data_name=data_name
+            )
     
     def handle_with_position(self, data, current_low: float, data_name: str):
         """
@@ -238,31 +252,6 @@ class Breakout20Strategy(bt.Strategy):
                 data_name=data_name
             )
     
-    def calculate_position_size(self, data) -> int:
-        """
-        計算部位大小
-        
-        Args:
-            data: 股票資料物件
-            
-        Returns:
-            int: 部位大小（股數）
-        """
-        # 使用 cerebro 設定的 sizer
-        if hasattr(self.cerebro, 'sizers') and self.cerebro.sizers:
-            sizer = self.cerebro.sizers[0][0]
-            if hasattr(sizer, 'getsizing'):
-                return sizer.getsizing(data, isbuy=True)
-        
-        # 預設使用固定金額計算
-        available_cash = self.broker.getcash()
-        price = data.close[0]
-        
-        # 使用2%資金
-        target_value = available_cash * 0.02
-        size = int(target_value / price / 1000) * 1000  # 台股以千股為單位
-        
-        return max(size, 1000)  # 最少買1張
     
     def stop(self):
         """策略結束時的處理"""
@@ -303,40 +292,31 @@ class Breakout20StrategyOptimized(Breakout20Strategy):
                     data, period=self.params.atr_period
                 )
     
-    def calculate_position_size(self, data) -> int:
+    def handle_no_position(self, data, current_close: float, sma_value: float,
+                          highest_value: float, data_name: str):
         """
-        優化的部位大小計算
-        
-        Args:
-            data: 股票資料物件
-            
-        Returns:
-            int: 部位大小（股數）
+        處理無倉位時的邏輯 (優化版本)
         """
         # 檢查最大持倉限制
-        current_positions = sum(1 for pos in [self.getposition(d) for d in self.datas] if pos.size > 0)
-        
+        current_positions = sum(1 for d in self.datas if self.getposition(d).size > 0)
         if current_positions >= self.params.max_positions:
-            return 0
-        
+            return
+
         # 檢查成交量
         if data.volume[0] < self.params.min_volume:
-            return 0
-        
-        # 基礎部位計算
-        base_size = super().calculate_position_size(data)
-        
-        # 根據 ATR 調整部位大小
+            return
+
+        # 根據 ATR 調整風險 (此處不直接調整部位，而是作為進場過濾器)
         if self.params.volatility_filter and data in self.atr:
             if len(data) >= self.params.atr_period:
                 atr_value = self.atr[data][0]
                 price = data.close[0]
-                
-                # 根據波動率調整部位（波動率越高，部位越小）
-                volatility_factor = min(1.0, (price * 0.02) / (atr_value * self.params.atr_multiplier))
-                base_size = int(base_size * volatility_factor)
-        
-        return max(base_size, 1000) if base_size > 0 else 0
+                # 如果波動過大，則跳過
+                if (atr_value / price) > 0.05: # ATR 超過股價5%，視為波動過大
+                    return
+
+        # 呼叫基礎版本的邏輯
+        super().handle_no_position(data, current_close, sma_value, highest_value, data_name)
 
 
 def get_strategy_class(optimized: bool = False):

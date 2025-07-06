@@ -59,14 +59,21 @@ class CustomMetricsAnalyzer(bt.Analyzer):
     
     def start(self):
         """回測開始時執行"""
-        self.start_value = self.strategy.broker.getvalue()
-        self.start_date = self.strategy.datetime.date(0)
-        self.peak_value = self.start_value
+        # self.start_value 不在此處初始化
+        # self.start_date 不在此處初始化
+        self.peak_value = self.strategy.broker.getvalue() # 峰值可以先設為初始資金
         
-        logger.info(f"回測開始 - 初始資金: {self.start_value:,.2f}")
-    
+        logger.info(f"分析器啟動 - 初始資金: {self.strategy.broker.getvalue():,.2f}")
+
     def next(self):
         """每個交易日執行"""
+        # 首次執行 next 時，記錄開始資訊
+        if self.start_date is None:
+            self.start_date = self.strategy.datetime.date(0)
+            self.start_value = self.strategy.broker.getvalue()
+            self.peak_value = self.start_value
+            logger.info(f"回測資料開始 - 日期: {self.start_date}, 資金: {self.start_value:,.2f}")
+
         current_value = self.strategy.broker.getvalue()
         current_date = self.strategy.datetime.date(0)
         
@@ -86,9 +93,12 @@ class CustomMetricsAnalyzer(bt.Analyzer):
         """交易完成通知"""
         if trade.isclosed:
             # 記錄交易資訊
+            entry_date = bt.num2date(trade.dtopen)
+            exit_date = bt.num2date(trade.dtclose)
+            
             trade_info = {
-                'entry_date': trade.dtopen,
-                'exit_date': trade.dtclose,
+                'entry_date': entry_date,
+                'exit_date': exit_date,
                 'symbol': trade.data._name,
                 'size': trade.size,
                 'entry_price': trade.price,
@@ -96,8 +106,8 @@ class CustomMetricsAnalyzer(bt.Analyzer):
                 'pnl': trade.pnl,
                 'pnl_comm': trade.pnlcomm,
                 'commission': trade.commission,
-                'duration': (trade.dtclose - trade.dtopen).days,
-                'return_pct': trade.pnl / (abs(trade.size) * trade.price) * 100 if trade.price != 0 else 0
+                'duration': (exit_date - entry_date).days,
+                'return_pct': trade.pnl / (abs(trade.size) * trade.price) * 100 if trade.price != 0 and trade.size != 0 else 0
             }
             
             self.trades.append(trade_info)
